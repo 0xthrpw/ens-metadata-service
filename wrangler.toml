@@ -1,0 +1,41 @@
+name = "ens-metadata-flarecloud"
+main = "src/index.ts"
+compatibility_date = "2026-04-19"
+compatibility_flags = ["nodejs_compat"]
+
+[placement]
+mode = "smart"
+
+[vars]
+ETH_RPC_URL = "https://eth.drpc.org"
+SEPOLIA_RPC_URL = "https://sepolia.drpc.org"
+HOLESKY_RPC_URL = "https://holesky.drpc.org"
+IPFS_GATEWAYS = "https://apac.orbitor.dev,https://eu.orbitor.dev,https://latam.orbitor.dev,https://ipfs.filebase.io,https://dweb.link,https://4everland.io,https://ipfs.io"
+SUBGRAPH_URL_MAINNET = "https://gateway.thegraph.com/api/{API_KEY}/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH"
+SUBGRAPH_URL_SEPOLIA = "https://api.studio.thegraph.com/query/49574/enssepolia/version/latest"
+SUBGRAPH_URL_HOLESKY = "https://api.studio.thegraph.com/query/49574/ensholesky/version/latest"
+
+[[r2_buckets]]
+binding = "IPFS_CACHE"
+bucket_name = "ens-metadata-ipfs-cache"
+preview_bucket_name = "ens-metadata-ipfs-cache"
+
+[[kv_namespaces]]
+binding = "RESOLVER_CACHE"
+id = "d02075a3013f416781084a7520dd4509"
+preview_id = "00000000000000000000000000000000"
+
+[[rules]]
+type = "Data"
+globs = ["**/*.otf", "**/*.ttf"]
+fallthrough = true
+
+[[rules]]
+type = "Text"
+globs = ["**/*.svg"]
+fallthrough = true
+
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+fallthrough = true

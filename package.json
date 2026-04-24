@@ -1,0 +1,51 @@
+{
+  "name": "ens-metadata-flarecloud",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ENS metadata service on Cloudflare Workers",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@adraffy/ens-normalize": "^1.11.1",
+    "@hono/zod-openapi": "^0.18.4",
+    "@resvg/resvg-wasm": "^2.6.2",
+    "@scalar/hono-api-reference": "^0.10.9",
+    "graphql": "^16.10.0",
+    "graphql-request": "^7.1.2",
+    "hono": "^4.7.0",
+    "viem": "^2.23.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.14.7",
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.4",
+    "wrangler": "^3.107.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "IPFS_CACHE": {
+        "description": "R2 bucket that caches IPFS content and HTTPS image bytes (keyed by CID or `sha256(url)`). Auto-provisioned on deploy."
+      },
+      "RESOLVER_CACHE": {
+        "description": "KV namespace that caches resolved ENS avatar/header URIs for 15 minutes. Auto-provisioned on deploy."
+      },
+      "THE_GRAPH_API_KEY": {
+        "description": "Optional. API key for authenticated queries against [The Graph](https://thegraph.com/studio/apikeys/). Leave blank to use public subgraph endpoints."
+      },
+      "RPC_API_KEY": {
+        "description": "Optional. Only needed if your configured `ETH_RPC_URL` / `SEPOLIA_RPC_URL` / `HOLESKY_RPC_URL` requires a bearer token."
+      },
+      "PINATA_GATEWAY_TOKEN": {
+        "description": "Optional. Token for a private [Pinata](https://pinata.cloud) IPFS gateway. Leave blank if you're only using public gateways."
+      }
+    }
+  }
+}

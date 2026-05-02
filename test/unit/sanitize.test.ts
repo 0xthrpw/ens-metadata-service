@@ -98,5 +98,19 @@ for (const [mode, sanitize] of SANITIZERS) {
       const clean = await sanitize(svg);
       expect(clean).not.toMatch(/\shref=/i);
     });
+
+    it("preserves xlink:href raster data images embedded in image tags", async () => {
+      const href = "data:image/png;base64,iVBORw0KGgo=";
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><image xlink:href="${href}"/></svg>`;
+      const clean = await sanitize(svg);
+      expect(clean).toContain(href);
+    });
+
+    it("strips data:image/svg+xml even on image tags", async () => {
+      const href = "data:image/svg+xml;base64,PHN2Zy8+";
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg"><image href="${href}"/></svg>`;
+      const clean = await sanitize(svg);
+      expect(clean).not.toMatch(/href=/i);
+    });
   });
 }

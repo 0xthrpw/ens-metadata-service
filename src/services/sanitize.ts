@@ -1,3 +1,5 @@
+export const SANITIZER_VERSION = "1"; // BUMP THIS WHEN SVG SANITIZER POLICY CHANGES
+
 const DANGEROUS_TAGS =
   "script, foreignObject, iframe, object, embed, link, meta, form, input, textarea, button, base";
 

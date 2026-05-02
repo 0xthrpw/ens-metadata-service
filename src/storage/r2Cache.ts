@@ -8,6 +8,7 @@ export type CachedImage = {
   lastModified?: string;
   fetchedAt: number;
   sanitized: boolean;
+  sanitizerVersion?: string;
   // Only set on `generated/*` entries. Lets us emit a name Cache-Tag on
   // cache-hit responses without another subgraph roundtrip.
   name?: string;
@@ -47,6 +48,7 @@ async function readObject(obj: R2ObjectBody | null): Promise<CachedImage | null>
     lastModified: meta.lastModified,
     fetchedAt: Number(meta.fetchedAt ?? "0"),
     sanitized: meta.sanitized === "1",
+    sanitizerVersion: meta.sanitizerVersion,
     name: meta.name,
   };
 }
@@ -61,9 +63,11 @@ export async function putIpfs(
   body: ArrayBuffer | ReadableStream<Uint8Array>,
   contentType: string,
   sanitized = false,
+  sanitizerVersion?: string,
 ): Promise<void> {
   const custom: Record<string, string> = { fetchedAt: String(Date.now()) };
   if (sanitized) custom.sanitized = "1";
+  if (sanitizerVersion) custom.sanitizerVersion = sanitizerVersion;
   await env.IPFS_CACHE.put(ipfsKey(ref), await toArrayBuffer(body), {
     httpMetadata: { contentType },
     customMetadata: custom,
@@ -77,13 +81,20 @@ export async function getHttps(env: Env, url: string): Promise<CachedImage | nul
 export type HttpsValidators = {
   etag?: string;
   lastModified?: string;
+  sanitizerVersion?: string;
+  contentType?: string;
 };
 
 export async function headHttps(env: Env, url: string): Promise<HttpsValidators | null> {
   const obj = await env.IPFS_CACHE.head(await httpsKey(url));
   if (!obj) return null;
   const meta = obj.customMetadata ?? {};
-  return { etag: meta.etag, lastModified: meta.lastModified };
+  return {
+    etag: meta.etag,
+    lastModified: meta.lastModified,
+    sanitizerVersion: meta.sanitizerVersion,
+    contentType: obj.httpMetadata?.contentType,
+  };
 }
 
 export async function putHttps(
@@ -94,11 +105,13 @@ export async function putHttps(
   etag?: string,
   lastModified?: string,
   sanitized = false,
+  sanitizerVersion?: string,
 ): Promise<void> {
   const custom: Record<string, string> = { fetchedAt: String(Date.now()) };
   if (etag) custom.etag = etag;
   if (lastModified) custom.lastModified = lastModified;
   if (sanitized) custom.sanitized = "1";
+  if (sanitizerVersion) custom.sanitizerVersion = sanitizerVersion;
   await env.IPFS_CACHE.put(await httpsKey(url), await toArrayBuffer(body), {
     httpMetadata: { contentType },
     customMetadata: custom,

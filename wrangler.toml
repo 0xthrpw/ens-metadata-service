@@ -14,6 +14,7 @@ IPFS_GATEWAYS = "https://apac.orbitor.dev,https://eu.orbitor.dev,https://latam.o
 SUBGRAPH_URL_MAINNET = "https://gateway.thegraph.com/api/{API_KEY}/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH"
 SUBGRAPH_URL_SEPOLIA = "https://api.studio.thegraph.com/query/49574/enssepolia/version/latest"
 SUBGRAPH_URL_HOLESKY = "https://api.studio.thegraph.com/query/49574/ensholesky/version/latest"
+CF_ZONE_ID = "4afbac62839fe25b7c506f94eb6b9c87"
 
 [[r2_buckets]]
 binding = "IPFS_CACHE"
@@ -22,7 +23,7 @@ preview_bucket_name = "ens-metadata-ipfs-cache"
 
 [[kv_namespaces]]
 binding = "RESOLVER_CACHE"
-id = "3b327b3540844464a00513b8510d9ed9"
+id = "230eddacc2c6470eb4d5e3100fae4d4a"
 preview_id = "00000000000000000000000000000000"
 
 [[rules]]

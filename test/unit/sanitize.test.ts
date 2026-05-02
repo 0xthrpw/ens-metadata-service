@@ -83,5 +83,20 @@ for (const [mode, sanitize] of SANITIZERS) {
       const clean = await sanitize(svg);
       expect(clean).toContain(`href="${href}"`);
     });
+
+    it("preserves base64 raster data images embedded in image tags", async () => {
+      const href = "data:image/png;base64,iVBORw0KGgo=";
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg"><image href="${href}" src="${href}"/></svg>`;
+      const clean = await sanitize(svg);
+      expect(clean).toContain(`href="${href}"`);
+      expect(clean).toContain(`src="${href}"`);
+    });
+
+    it("strips data images outside image tags", async () => {
+      const href = "data:image/png;base64,iVBORw0KGgo=";
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg"><a href="${href}"><rect/></a></svg>`;
+      const clean = await sanitize(svg);
+      expect(clean).not.toMatch(/\shref=/i);
+    });
   });
 }

@@ -22,7 +22,7 @@ preview_bucket_name = "ens-metadata-ipfs-cache"
 
 [[kv_namespaces]]
 binding = "RESOLVER_CACHE"
-id = "3b327b3540844464a00513b8510d9ed9"
+id = "230eddacc2c6470eb4d5e3100fae4d4a"
 preview_id = "00000000000000000000000000000000"
 
 [[rules]]

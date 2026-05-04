@@ -127,7 +127,7 @@ function estimateAdvance(cp: number, segment: string): number {
 		(cp >= 0xac00 && cp <= 0xd7af) ||
 		(cp >= 0xf900 && cp <= 0xfaff)
 	) {
-		return 17;
+		return 18;
 	}
 	return 18;
 }

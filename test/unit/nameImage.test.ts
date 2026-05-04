@@ -47,6 +47,13 @@ const UPSTREAM_FONT_SIZE_CASES = [
 	["fire🔥.eth", 32],
 
 	["привет.eth", 32],
+
+	["数字化货币.eth", 31],
+	["数字化生活.eth", 31],
+	["虚拟数字人.eth", 31],
+	["元宇宙虚拟现实世界.eth", 20],
+	["警惕高额回报虚拟货币都是诈骗.eth", 13],
+	["草拟妈个逼.eth", 31],
 ] as const;
 
 describe("getFontSize", () => {
@@ -72,5 +79,4 @@ describe("getFontSize", () => {
 		expect(fits).not.toBe(33);
 	});
 });
-
 

@@ -1,8 +1,11 @@
+export const SANITIZER_VERSION = "1"; // BUMP THIS WHEN SVG SANITIZER POLICY CHANGES
+
 const DANGEROUS_TAGS =
   "script, foreignObject, iframe, object, embed, link, meta, form, input, textarea, button, base";
 
 const URL_ATTRS = new Set(["href", "xlink:href", "src", "action", "formaction"]);
 const DANGEROUS_SCHEMES = /^(javascript|vbscript|data|file):/;
+const SAFE_EMBEDDED_IMAGE = /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i;
 const ASCII_WHITESPACE_AND_C0 = /[\u0000-\u0020]+/g;
 const NAMED_HTML_REFS = new Map([
   ["colon", ":"],
@@ -43,6 +46,15 @@ function hasDangerousScheme(value: string): boolean {
   return DANGEROUS_SCHEMES.test(normalizeUrlForSchemeCheck(value));
 }
 
+function isSafeEmbeddedImage(el: Element, name: string, value: string): boolean {
+  const attr = name.toLowerCase();
+  return (
+    el.tagName.toLowerCase() === "image" &&
+    (attr === "href" || attr === "xlink:href" || attr === "src") &&
+    SAFE_EMBEDDED_IMAGE.test(value)
+  );
+}
+
 class RemoveElement {
   element(el: Element) {
     el.remove();
@@ -60,6 +72,7 @@ class SanitizeAttributes {
       if (
         URL_ATTRS.has(name.toLowerCase()) &&
         value !== undefined &&
+        !isSafeEmbeddedImage(el, name, value) &&
         hasDangerousScheme(value)
       ) {
         el.removeAttribute(name);

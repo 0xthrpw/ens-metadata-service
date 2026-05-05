@@ -164,7 +164,7 @@ describe("route cache headers", () => {
         network: "mainnet",
         contract: NAME_WRAPPER_V2,
         tokenHex,
-        version: "svg-v4",
+        version: "svg-v5",
       },
       toArrayBuffer(new TextEncoder().encode("<svg/>")),
       "image/svg+xml",
@@ -183,7 +183,7 @@ describe("route cache headers", () => {
     expect(await response.text()).toBe("<svg/>");
 
     await testEnv.IPFS_CACHE.delete(
-      `generated/mainnet/${NAME_WRAPPER_V2.toLowerCase()}/${tokenHex}/svg-v4.bin`,
+      `generated/mainnet/${NAME_WRAPPER_V2.toLowerCase()}/${tokenHex}/svg-v5.bin`,
     );
     const cachedCtx = createExecutionContext();
     const cached = await nameImageRoutes.fetch(request, testEnv, cachedCtx);

@@ -10,7 +10,7 @@ import {
 import { createClient, getOwner, normalizeName } from "./ens";
 import { fetchIpfs, fetchIpns, parseIpfs, parseIpns } from "./ipfs";
 import { resolveNftAvatar } from "./nftAvatar";
-import { sanitizeSvg } from "./sanitize";
+import { sanitizeSvg, SANITIZER_VERSION } from "./sanitize";
 import { deleteResolved, getResolved, putResolved } from "../storage/kvCache";
 import { getHttps, getIpfs, headHttps, putHttps, putIpfs } from "../storage/r2Cache";
 import { isSvgMime, sniffMime, SVG_MIME } from "../lib/mime";
@@ -125,6 +125,11 @@ async function sanitizeIfSvg(
   };
 }
 
+function svgVersionedEtag(sourceEtag: string): string {
+  const bare = sourceEtag.replace(/^"|"$/g, "");
+  return `"${bare}-sv${SANITIZER_VERSION}"`;
+}
+
 export async function resolveUriCached(
   env: Env,
   kind: AvatarKind,
@@ -184,11 +189,12 @@ export async function fetchImageBytes(
       const etag = ipfsEtag(ref);
       const hit = await getIpfs(env, ref);
       if (hit && hit.bytes.byteLength <= MAX_IMAGE_BYTES) {
-        if (hit.sanitized || !isSvgMime(hit.contentType)) {
+        if (!isSvgMime(hit.contentType)) {
           return { body: hit.bytes, contentType: hit.contentType, etag };
         }
-        const sanitized = await sanitizeIfSvg(hit.bytes, hit.contentType);
-        return { ...sanitized, etag };
+        if (hit.sanitized && hit.sanitizerVersion === SANITIZER_VERSION) {
+          return { body: hit.bytes, contentType: hit.contentType, etag };
+        }
       }
       const res = await fetchIpfs(env, ref);
       if (advertisedLengthExceeds(res.headers, MAX_IMAGE_BYTES)) {
@@ -204,8 +210,9 @@ export async function fetchImageBytes(
       const rawType = headerType ?? sniffMime(new Uint8Array(rawBytes));
       const image = await sanitizeIfSvg(rawBytes, rawType);
       const stored = image.body as ArrayBuffer;
+      const isIpfsSvg = isSvgMime(image.contentType);
       ctx.waitUntil(
-        putIpfs(env, ref, stored, image.contentType, isSvgMime(image.contentType)),
+        putIpfs(env, ref, stored, image.contentType, isIpfsSvg, isIpfsSvg ? SANITIZER_VERSION : undefined),
       );
       return { ...image, etag };
     }
@@ -229,7 +236,13 @@ export async function fetchImageBytes(
     }
 
     case "https": {
-      const validators = await headHttps(env, classified.url);
+      const rawValidators = await headHttps(env, classified.url);
+      const validators =
+        rawValidators &&
+        isSvgMime(rawValidators.contentType ?? "") &&
+        rawValidators.sanitizerVersion !== SANITIZER_VERSION
+          ? null
+          : rawValidators;
       const headers: HeadersInit = {};
       if (validators?.etag) headers["If-None-Match"] = validators.etag;
       if (validators?.lastModified) headers["If-Modified-Since"] = validators.lastModified;
@@ -249,10 +262,16 @@ export async function fetchImageBytes(
         if (hit) {
           assertUnderSizeLimit(hit.bytes.byteLength);
           if (hit.sanitized || !isSvgMime(hit.contentType)) {
-            return { body: hit.bytes, contentType: hit.contentType, etag: hit.etag };
+            const servedEtag = isSvgMime(hit.contentType) && hit.etag ? svgVersionedEtag(hit.etag) : hit.etag;
+            return { body: hit.bytes, contentType: hit.contentType, etag: servedEtag };
           }
           const sanitized = await sanitizeIfSvg(hit.bytes, hit.contentType);
-          return { ...sanitized, etag: hit.etag };
+          const sourceEtag = hit.etag;
+          ctx.waitUntil(
+            putHttps(env, classified.url, sanitized.body as ArrayBuffer, sanitized.contentType, sourceEtag, hit.lastModified, true, SANITIZER_VERSION),
+          );
+          const svgEtag = sourceEtag ? svgVersionedEtag(sourceEtag) : undefined;
+          return { ...sanitized, etag: svgEtag };
         }
         throw upstream("cached image disappeared between head and get");
       }
@@ -272,6 +291,7 @@ export async function fetchImageBytes(
       const rawType = headerType ?? sniffMime(new Uint8Array(rawBytes));
       const image = await sanitizeIfSvg(rawBytes, rawType);
       const stored = image.body as ArrayBuffer;
+      const isSvg = isSvgMime(image.contentType);
       ctx.waitUntil(
         putHttps(
           env,
@@ -280,10 +300,12 @@ export async function fetchImageBytes(
           image.contentType,
           etag,
           lastModified,
-          isSvgMime(image.contentType),
+          isSvg,
+          isSvg ? SANITIZER_VERSION : undefined,
         ),
       );
-      return { ...image, etag };
+      const servedEtag = isSvg && etag ? svgVersionedEtag(etag) : etag;
+      return { ...image, etag: servedEtag };
     }
 
     case "eip155": {

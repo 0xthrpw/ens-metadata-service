@@ -83,6 +83,7 @@ Cloudflare retired its public IPFS gateway in 2024. Pinata or a self-hosted Kubo
 - Image bytes are cached in R2, keyed by IPFS CID or by `sha256(url)` for HTTPS sources
 - HTTPS fetches are revalidated with `If-None-Match` / `If-Modified-Since` when an ETag or `Last-Modified` was stored
 - Responses also opt into the Workers Cache API via `Cache-Control: public, max-age=900`
+- Sanitized SVG bytes are stored in R2 with a `sanitizerVersion` field. When the SVG sanitizer policy changes, bump `SANITIZER_VERSION` in `src/services/sanitize.ts`; older cached entries are lazily re-sanitized on first read. Note: `*.workers.dev` preview URLs cannot be tag-purged — stale Workers Cache responses expire naturally after `max-age=900` (15 min).
 
 ## License
 

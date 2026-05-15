@@ -3,6 +3,7 @@ import { upstream } from "../../lib/errors";
 import { getHttps, headHttps, putHttps } from "../../storage/r2Cache";
 import { isSvgMime, sniffMime, SVG_MIME } from "../../lib/mime";
 import { sanitizeSvgStream, SANITIZER_VERSION } from "../sanitize";
+import { log } from "../../lib/log";
 import { HTTPS_IMAGE_TIMEOUT_MS, MAX_IMAGE_BYTES } from "../../constants";
 import { advertisedLengthExceeds, assertUnderSizeLimit } from "./size";
 import { readResponseBytes, sizeLimitedStream, teeBranchToR2 } from "./stream";
@@ -38,6 +39,7 @@ export async function handleHttps(
   if (res.status === 304 && validators) {
     const hit = await getHttps(env, url);
     if (hit) {
+      log.debug("r2_image_revalidated", { scheme: "https" });
       assertUnderSizeLimit(hit.bytes.byteLength);
       if (hit.sanitized || !isSvgMime(hit.contentType)) {
         const servedEtag = isSvgMime(hit.contentType) && hit.etag ? svgVersionedEtag(hit.etag) : hit.etag;
@@ -54,6 +56,7 @@ export async function handleHttps(
     throw upstream("cached image disappeared between head and get");
   }
   if (!res.ok) throw upstream(`image fetch failed: ${res.status}`);
+  log.debug("r2_image_miss", { scheme: "https" });
   if (advertisedLengthExceeds(res.headers, MAX_IMAGE_BYTES)) {
     throw upstream(
       `image too large: content-length ${res.headers.get("content-length")} > ${MAX_IMAGE_BYTES}`,

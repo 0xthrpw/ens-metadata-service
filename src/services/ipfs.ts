@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import { upstream } from "../lib/errors";
+import { log } from "../lib/log";
 import { IPFS_GATEWAY_TIMEOUT_MS } from "../constants";
 
 export type IpfsRef = {
@@ -74,9 +75,19 @@ async function fetchFromGateways(
         : e instanceof Error
           ? e.message
           : String(e);
+    log.error("ipfs_all_gateways_failed", {
+      label,
+      attempts: list.length,
+      errors: errs,
+    });
     throw upstream(`all ${label} gateways failed: ${errs}`, e);
   }
 
+  log.debug("ipfs_gateway_win", {
+    label,
+    gatewayIndex: winner.index,
+    attempts: list.length,
+  });
   for (let i = 0; i < controllers.length; i++) {
     if (i !== winner.index) controllers[i]!.abort();
   }

@@ -4,6 +4,7 @@ import { Scalar } from "@scalar/hono-api-reference";
 
 import type { Env } from "./env";
 import { HttpError } from "./lib/errors";
+import { createLogger, log, parseLevel } from "./lib/log";
 import { createLlmsText } from "./lib/llms";
 import { scalarTheme } from "./lib/scalarTheme";
 import { avatarRoutes, headerRoutes } from "./routes/images";
@@ -31,6 +32,32 @@ app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
 });
 
 app.use("*", cors());
+
+// Request correlation + one structured completion line per request. `reqId`
+// is Cloudflare's cf-ray when present (cross-references Workers Logs with the
+// dashboard) and a UUID otherwise (local/test). Level is env-driven per
+// request; the logger is exposed to handlers via c.get("log").
+app.use("*", async (c, next) => {
+  const reqId = c.req.header("cf-ray") ?? crypto.randomUUID();
+  const colo = (c.req.raw.cf as { colo?: string } | undefined)?.colo;
+  const reqLog = createLogger(
+    { reqId, ...(colo ? { colo } : {}) },
+    parseLevel(c.env.LOG_LEVEL),
+  );
+  c.set("log", reqLog);
+  const start = Date.now();
+  await next();
+  const network = c.req.param("network");
+  const name = c.req.param("name");
+  reqLog.info("request_complete", {
+    method: c.req.method,
+    path: c.req.path,
+    status: c.res.status,
+    durationMs: Date.now() - start,
+    ...(network ? { network } : {}),
+    ...(name ? { name } : {}),
+  });
+});
 
 app.route("/", avatarRoutes);
 app.route("/", headerRoutes);
@@ -75,10 +102,26 @@ app.get("/llms.txt", (c) => {
 });
 
 app.onError((err, c) => {
+  const logger = c.get("log") ?? log;
   if (err instanceof HttpError) {
+    // 5xx HttpErrors are expected upstream failures, not bugs — warn, and skip
+    // 4xx entirely (highest-volume, normal client behavior; would be noise).
+    if (err.status >= 500) {
+      logger.warn("http_error", {
+        method: c.req.method,
+        path: c.req.path,
+        status: err.status,
+        code: err.code,
+        err,
+      });
+    }
     return Response.json({ error: err.code ?? "error", message: err.message }, { status: err.status });
   }
-  console.error(`unhandled error for ${c.req.method} ${c.req.path}:`, err);
+  logger.error("unhandled_error", {
+    method: c.req.method,
+    path: c.req.path,
+    err,
+  });
   return Response.json({ error: "internal_error", message: "internal server error" }, { status: 500 });
 });
 

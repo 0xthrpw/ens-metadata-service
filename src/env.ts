@@ -29,4 +29,9 @@ export type Env = {
   CACHE_INVALIDATION_TOKEN?: string;
   CF_API_TOKEN?: string;
   CF_ZONE_ID?: string;
+
+  // Optional. One of "debug" | "info" | "warn" | "error". Minimum structured
+  // log level emitted to Workers Logs; defaults to "info" when unset or
+  // unrecognised. Set as a [vars] value, not a secret.
+  LOG_LEVEL?: string;
 };

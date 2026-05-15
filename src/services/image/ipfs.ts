@@ -4,6 +4,7 @@ import { fetchIpfs, parseIpfs } from "../ipfs";
 import { getIpfs, putIpfs } from "../../storage/r2Cache";
 import { isSvgMime, sniffMime, SVG_MIME } from "../../lib/mime";
 import { sanitizeSvgStream, SANITIZER_VERSION } from "../sanitize";
+import { log } from "../../lib/log";
 import { MAX_IMAGE_BYTES } from "../../constants";
 import { advertisedLengthExceeds, ipfsEtag } from "./size";
 import { readResponseBytes, sizeLimitedStream, teeBranchToR2 } from "./stream";
@@ -21,12 +22,15 @@ export async function handleIpfs(
   const hit = await getIpfs(env, ref);
   if (hit && hit.bytes.byteLength <= MAX_IMAGE_BYTES) {
     if (!isSvgMime(hit.contentType)) {
+      log.debug("r2_image_hit", { scheme: "ipfs" });
       return { body: hit.bytes, contentType: hit.contentType, etag };
     }
     if (hit.sanitized && hit.sanitizerVersion === SANITIZER_VERSION) {
+      log.debug("r2_image_hit", { scheme: "ipfs" });
       return { body: hit.bytes, contentType: hit.contentType, etag };
     }
   }
+  log.debug("r2_image_miss", { scheme: "ipfs" });
   const res = await fetchIpfs(env, ref);
   if (advertisedLengthExceeds(res.headers, MAX_IMAGE_BYTES)) {
     throw upstream(

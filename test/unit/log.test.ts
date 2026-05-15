@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createLogger, log, parseLevel } from "../../src/lib/log";
+import { createLogger, log, parseLevel, setDefaultLevel } from "../../src/lib/log";
 import { notFound, upstream } from "../../src/lib/errors";
 
 type Spies = Record<"debug" | "info" | "warn" | "error", ReturnType<typeof vi.spyOn>>;
@@ -20,6 +20,7 @@ function lastJson(spy: ReturnType<typeof vi.spyOn>): any {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  setDefaultLevel("info"); // reset module-logger level between tests
 });
 
 describe("parseLevel", () => {
@@ -173,5 +174,29 @@ describe("createLogger", () => {
     const s = spyConsole();
     log.info("singleton");
     expect(lastJson(s.info).event).toBe("singleton");
+  });
+
+  it("module default logger suppresses debug at the default level", () => {
+    const s = spyConsole();
+    log.debug("seam");
+    expect(s.debug).not.toHaveBeenCalled();
+  });
+
+  it("setDefaultLevel('debug') makes the module logger emit debug", () => {
+    const s = spyConsole();
+    setDefaultLevel("debug");
+    log.debug("seam", { scheme: "ipfs" });
+    expect(lastJson(s.debug).event).toBe("seam");
+    expect(lastJson(s.debug).scheme).toBe("ipfs");
+  });
+
+  it("setDefaultLevel also gates children of the module logger", () => {
+    const s = spyConsole();
+    log.child({ a: 1 }).debug("child-seam");
+    expect(s.debug).not.toHaveBeenCalled();
+    setDefaultLevel("debug");
+    log.child({ a: 1 }).debug("child-seam");
+    expect(lastJson(s.debug).event).toBe("child-seam");
+    expect(lastJson(s.debug).a).toBe(1);
   });
 });

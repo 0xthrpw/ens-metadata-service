@@ -144,15 +144,14 @@ export interface Logger {
   child(extra: Record<string, unknown>): Logger;
 }
 
-export function createLogger(
-  base: Record<string, unknown> = {},
-  minLevel: LogLevel = "info",
+function makeLogger(
+  base: Record<string, unknown>,
+  getMin: () => number,
 ): Logger {
-  const min = RANK[minLevel];
   const make =
     (level: LogLevel) =>
     (event: string, fields?: Record<string, unknown>): void => {
-      if (RANK[level] < min) return;
+      if (RANK[level] < getMin()) return;
       emit(level, event, base, fields);
     };
   return {
@@ -161,14 +160,33 @@ export function createLogger(
     warn: make("warn"),
     error: make("error"),
     child(extra) {
-      return createLogger({ ...base, ...extra }, minLevel);
+      return makeLogger({ ...base, ...extra }, getMin);
     },
   };
 }
 
-// Default logger for code with no request context (waitUntil tasks, module
-// init). Fixed at `info` — env-driven levels are applied per-request.
-export const log: Logger = createLogger();
+export function createLogger(
+  base: Record<string, unknown> = {},
+  minLevel: LogLevel = "info",
+): Logger {
+  const min = RANK[minLevel];
+  return makeLogger(base, () => min);
+}
+
+// The default logger's level mirrors the deployment's LOG_LEVEL — a
+// deployment-wide [vars] value, identical for every request. It can't be
+// read at module-init on Workers, so the request middleware calls
+// setDefaultLevel(); idempotent since the env value is constant.
+let defaultMinRank = RANK.info;
+
+export function setDefaultLevel(level: LogLevel): void {
+  defaultMinRank = RANK[level];
+}
+
+// Default logger for code with no request context (waitUntil tasks, the
+// service layer). Its level follows setDefaultLevel(), so LOG_LEVEL=debug
+// actually enables the cache-seam / gateway diagnostics routed through it.
+export const log: Logger = makeLogger({}, () => defaultMinRank);
 
 // Make `c.get("log")` / `c.set("log", …)` typed in every Hono context without
 // threading a Variables generic through each route module (which would force

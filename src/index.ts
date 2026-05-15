@@ -4,7 +4,7 @@ import { Scalar } from "@scalar/hono-api-reference";
 
 import type { Env } from "./env";
 import { HttpError } from "./lib/errors";
-import { createLogger, log, parseLevel } from "./lib/log";
+import { createLogger, log, parseLevel, setDefaultLevel } from "./lib/log";
 import { createLlmsText } from "./lib/llms";
 import { scalarTheme } from "./lib/scalarTheme";
 import { registerRoutes } from "./routes";
@@ -31,10 +31,11 @@ app.use("*", cors());
 app.use("*", async (c, next) => {
   const reqId = c.req.header("cf-ray") ?? crypto.randomUUID();
   const colo = (c.req.raw.cf as { colo?: string } | undefined)?.colo;
-  const reqLog = createLogger(
-    { reqId, ...(colo ? { colo } : {}) },
-    parseLevel(c.env.LOG_LEVEL),
-  );
+  const level = parseLevel(c.env.LOG_LEVEL);
+  // Keep the module/default logger (used by the service layer + waitUntil
+  // tasks) in sync with LOG_LEVEL, so debug diagnostics are reachable.
+  setDefaultLevel(level);
+  const reqLog = createLogger({ reqId, ...(colo ? { colo } : {}) }, level);
   c.set("log", reqLog);
   const start = Date.now();
   await next();

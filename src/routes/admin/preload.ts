@@ -100,6 +100,8 @@ async function warmItem(env: Env, base: string, item: Item): Promise<PerItem> {
     edge_warmed: false,
   };
 
+  const errors: string[] = [];
+
   if (item.cid) {
     try {
       const ref = parseIpfs(item.cid);
@@ -108,46 +110,52 @@ async function warmItem(env: Env, base: string, item: Item): Promise<PerItem> {
       out.r2_warmed = true;
       out.bytes = r.bytes;
     } catch (err) {
-      out.error = errMessage(err);
+      errors.push(`cid: ${errMessage(err)}`);
     }
   }
 
-  if (item.network && item.name && !out.error) {
+  // Independent of the cid outcome: a bad or temporarily unavailable CID
+  // must not prevent KV/R2/edge warming for the ENS name. Both signals are
+  // best-effort and reported per-item (see docs/cache-preload.md).
+  if (item.network && item.name) {
     if (!getNetwork(env, item.network)) {
-      out.error = `unknown network: ${item.network}`;
-      return out;
-    }
-    const kinds: Array<"avatar" | "header"> =
-      item.kind === "both" ? ["avatar", "header"] : [item.kind];
-    try {
-      let lastStatus = 0;
-      for (const k of kinds) {
-        // Self-fetch the public route so its handler warms KV + R2 + the
-        // (per-colo) edge cache. No If-None-Match — we must populate a full
-        // response. The marker header lets the preload route trip a loop.
-        const res = await fetch(
-          `${base}/${item.network}/${k}/${encodeURIComponent(item.name)}`,
-          {
-            headers: { [PRELOAD_MARKER]: "1" },
-            cf: { cacheEverything: true },
-            signal: AbortSignal.timeout(SELF_FETCH_TIMEOUT_MS),
-          },
-        );
-        // Drain so the route's waitUntil cache.put can complete.
-        await res.arrayBuffer().catch(() => {});
-        lastStatus = res.status;
-        if (!res.ok && res.status !== 304) {
-          out.error = `preload ${k} -> ${res.status}`;
-          break;
+      errors.push(`unknown network: ${item.network}`);
+    } else {
+      const kinds: Array<"avatar" | "header"> =
+        item.kind === "both" ? ["avatar", "header"] : [item.kind];
+      try {
+        let lastStatus = 0;
+        let ok = true;
+        for (const k of kinds) {
+          // Self-fetch the public route so its handler warms KV + R2 + the
+          // (per-colo) edge cache. No If-None-Match — we must populate a
+          // full response. The marker header lets preload trip a loop.
+          const res = await fetch(
+            `${base}/${item.network}/${k}/${encodeURIComponent(item.name)}`,
+            {
+              headers: { [PRELOAD_MARKER]: "1" },
+              cf: { cacheEverything: true },
+              signal: AbortSignal.timeout(SELF_FETCH_TIMEOUT_MS),
+            },
+          );
+          // Drain so the route's waitUntil cache.put can complete.
+          await res.arrayBuffer().catch(() => {});
+          lastStatus = res.status;
+          if (!res.ok && res.status !== 304) {
+            errors.push(`preload ${k} -> ${res.status}`);
+            ok = false;
+            break;
+          }
         }
+        out.status = lastStatus;
+        if (ok) out.edge_warmed = true;
+      } catch (err) {
+        errors.push(`edge: ${errMessage(err)}`);
       }
-      out.status = lastStatus;
-      if (!out.error) out.edge_warmed = true;
-    } catch (err) {
-      out.error = errMessage(err);
     }
   }
 
+  if (errors.length > 0) out.error = errors.join("; ");
   return out;
 }
 

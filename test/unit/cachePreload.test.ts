@@ -226,6 +226,39 @@ describe("POST /cache/preload — network+name warms the edge", () => {
     expect(peak).toBeLessThanOrEqual(6);
   });
 
+  it("a failing cid does not block name-based edge warming on the same item", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("gw.example")) return new Response("nope", { status: 502 });
+      return new Response("ok", { status: 200 });
+    });
+
+    const res = await call(
+      req({
+        items: [
+          {
+            cid: cidUri("blocked"),
+            network: "mainnet",
+            name: "z.eth",
+            kind: "avatar",
+          },
+        ],
+      }),
+      makeEnv(),
+    );
+    const body = (await res.json()) as any;
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+
+    const it0 = body.items[0];
+    expect(it0.r2_warmed).toBe(false); // cid fetch failed
+    expect(it0.edge_warmed).toBe(true); // name path still ran
+    expect(it0.status).toBe(200);
+    expect(it0.error).toMatch(/cid:/);
+    expect(body.warmed).toBe(1);
+    expect(body.failed).toBe(1);
+  });
+
   it("mixed batch: some warmed, some failed, ok stays true", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = typeof input === "string" ? input : (input as Request).url;

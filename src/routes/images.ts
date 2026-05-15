@@ -134,8 +134,18 @@ function buildImageRoutes(kind: AvatarKind): OpenAPIHono<{ Bindings: Env }> {
       }
       return res as never;
     } catch (err) {
-      // 404 = record not set; 502 = record set but upstream fetch failed.
-      // Serve the default for both. 415 stays a real error.
+      // Fallback to the default image for failures that surface BEFORE the
+      // response is committed: 404 (record not set) and 502 (record set but
+      // the upstream fetch failed pre-stream — fetch threw, non-2xx, or
+      // content-length > MAX). 415 stays a real error.
+      //
+      // NOTE: in the streaming path (upstream sent both content-type and
+      // content-length) fetchImageBytes returns a 200 stream before the body
+      // is read, so a mid-body upstream abort — or a content-length lie that
+      // trips the size guard — can no longer be caught here: the client gets
+      // a truncated 200, not the default image. This is the accepted
+      // streaming tradeoff (TTFB win); every pre-stream failure still falls
+      // back, and a partial body is never cached.
       if (err instanceof HttpError && (err.status === 404 || err.status === 502)) {
         return defaultImageResponse(kind, network, name) as never;
       }

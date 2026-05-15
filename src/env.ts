@@ -30,6 +30,15 @@ export type Env = {
   CF_API_TOKEN?: string;
   CF_ZONE_ID?: string;
 
+  // Indexer-only `/cache/preload` endpoint. When unset the endpoint returns
+  // 503; every other route is unaffected. Set as a secret
+  // (`wrangler secret put CACHE_PRELOAD_TOKEN`).
+  CACHE_PRELOAD_TOKEN?: string;
+  // Absolute base URL the preload endpoint self-fetches to warm the edge
+  // cache (e.g. https://ens.example.com). Falls back to the incoming request
+  // origin when unset. Set as a [vars] value, not a secret.
+  PUBLIC_BASE_URL?: string;
+
   // Optional. One of "debug" | "info" | "warn" | "error". Minimum structured
   // log level emitted to Workers Logs; defaults to "info" when unset or
   // unrecognised. Set as a [vars] value, not a secret.

@@ -1,6 +1,6 @@
 import type { Env } from "../../env";
 import { badRequest, upstream } from "../../lib/errors";
-import { fetchIpfs, parseIpfs } from "../ipfs";
+import { fetchIpfs, parseIpfs, type IpfsRef } from "../ipfs";
 import { getIpfs, putIpfs } from "../../storage/r2Cache";
 import { isSvgMime, sniffMime, SVG_MIME } from "../../lib/mime";
 import { sanitizeSvgStream, SANITIZER_VERSION } from "../sanitize";
@@ -75,4 +75,51 @@ export async function handleIpfs(
     ),
   );
   return { body: toClient, contentType: outType, etag };
+}
+
+// Store-only IPFS warm used by the preload endpoint. Unlike handleIpfs it
+// reuses a usable cache hit, otherwise fetches + sanitizes and *awaits* the
+// R2 write (no streaming/tee) so the caller gets an accurate byte count.
+export async function warmIpfsToR2(
+  env: Env,
+  ref: IpfsRef,
+): Promise<{ bytes: number; contentType: string; fromCache: boolean }> {
+  const hit = await getIpfs(env, ref);
+  if (hit && hit.bytes.byteLength <= MAX_IMAGE_BYTES) {
+    if (
+      !isSvgMime(hit.contentType) ||
+      (hit.sanitized && hit.sanitizerVersion === SANITIZER_VERSION)
+    ) {
+      return {
+        bytes: hit.bytes.byteLength,
+        contentType: hit.contentType,
+        fromCache: true,
+      };
+    }
+  }
+  const res = await fetchIpfs(env, ref);
+  if (advertisedLengthExceeds(res.headers, MAX_IMAGE_BYTES)) {
+    throw upstream(
+      `image too large: content-length ${res.headers.get("content-length")} > ${MAX_IMAGE_BYTES}`,
+    );
+  }
+  const headerType = res.headers.get("content-type");
+  const rawBytes = await readResponseBytes(res, true);
+  const rawType = headerType ?? sniffMime(new Uint8Array(rawBytes));
+  const image = await sanitizeIfSvg(rawBytes, rawType);
+  const stored = image.body as ArrayBuffer;
+  const isIpfsSvg = isSvgMime(image.contentType);
+  await putIpfs(
+    env,
+    ref,
+    stored,
+    image.contentType,
+    isIpfsSvg,
+    isIpfsSvg ? SANITIZER_VERSION : undefined,
+  );
+  return {
+    bytes: stored.byteLength,
+    contentType: image.contentType,
+    fromCache: false,
+  };
 }

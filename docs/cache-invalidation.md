@@ -16,6 +16,10 @@ One call per record change is sufficient. You do not need to pick a
 specific asset to invalidate — the endpoint wipes everything tied to the
 name.
 
+> **See also:** [`POST /cache/preload`](./cache-preload.md) — the inverse
+> endpoint that re-warms R2 + the edge cache so the first user after an
+> invalidation gets a hot response.
+
 ---
 
 ## When to call it

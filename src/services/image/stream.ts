@@ -36,8 +36,52 @@ export function sizeLimitedStream(
 export async function teeBranchToR2(
   branch: ReadableStream<Uint8Array>,
   write: (bytes: ArrayBuffer) => Promise<void>,
+  // Known output byte length (the non-SVG streaming path: bytes pass through
+  // unchanged so length == content-length, already capped at MAX). Lets us
+  // fill ONE preallocated buffer instead of buffering every chunk and then
+  // copying into a second contiguous buffer — avoids ~2x peak memory on
+  // large images. Omitted for the sanitized-SVG path, where HTMLRewriter
+  // changes the length (and SVG payloads are small anyway).
+  expectedLength?: number,
 ): Promise<void> {
   const reader = branch.getReader();
+
+  if (expectedLength !== undefined) {
+    const out = new Uint8Array(expectedLength);
+    let offset = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value || value.byteLength === 0) continue;
+        if (offset + value.byteLength > expectedLength) {
+          // Body longer than its declared length — malformed; don't cache.
+          reader.releaseLock();
+          return;
+        }
+        out.set(value, offset);
+        offset += value.byteLength;
+      }
+    } catch {
+      reader.releaseLock();
+      return; // overflow / abort — leave the cache cold rather than partial
+    }
+    reader.releaseLock();
+    try {
+      // Exact length is the common case (no copy); a short body (server
+      // under-declared) gets a one-off sized copy.
+      await write(
+        offset === expectedLength
+          ? (out.buffer as ArrayBuffer)
+          : out.buffer.slice(0, offset),
+      );
+    } catch {
+      /* best-effort background cache write */
+    }
+    return;
+  }
+
+  // Unknown output length (sanitized SVG): buffer chunks, then concatenate.
   const chunks: Uint8Array[] = [];
   let total = 0;
   try {

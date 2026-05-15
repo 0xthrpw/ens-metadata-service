@@ -62,16 +62,24 @@ export async function handleIpfs(
   const outStream = isIpfsSvg ? sanitizeSvgStream(limited) : limited;
   const outType = isIpfsSvg ? SVG_MIME : headerType;
   const [toClient, toR2] = outStream.tee();
+  // Non-SVG bytes pass through unchanged, so the R2 copy length equals the
+  // (already <= MAX) content-length — lets teeBranchToR2 use one buffer.
+  const cl = Number(res.headers.get("content-length"));
+  const r2Length =
+    !isIpfsSvg && Number.isFinite(cl) && cl >= 0 ? cl : undefined;
   ctx.waitUntil(
-    teeBranchToR2(toR2, (bytes) =>
-      putIpfs(
-        env,
-        ref,
-        bytes,
-        outType,
-        isIpfsSvg,
-        isIpfsSvg ? SANITIZER_VERSION : undefined,
-      ),
+    teeBranchToR2(
+      toR2,
+      (bytes) =>
+        putIpfs(
+          env,
+          ref,
+          bytes,
+          outType,
+          isIpfsSvg,
+          isIpfsSvg ? SANITIZER_VERSION : undefined,
+        ),
+      r2Length,
     ),
   );
   return { body: toClient, contentType: outType, etag };

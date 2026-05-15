@@ -3,6 +3,7 @@ import type { Env } from "../../env";
 import { badRequest } from "../../lib/errors";
 import { log } from "../../lib/log";
 import { runIndexerBatch } from "../../lib/indexerBatch";
+import { DEFAULT_IMAGE_HEADER } from "../../constants";
 import { getNetwork } from "../../lib/networks";
 import { parseIpfs } from "../../services/ipfs";
 import { warmIpfsToR2 } from "../../services/image";
@@ -128,19 +129,32 @@ async function warmItem(env: Env, base: string, item: Item): Promise<PerItem> {
         let ok = true;
         for (const k of kinds) {
           // Self-fetch the public route so its handler warms KV + R2 + the
-          // (per-colo) edge cache. No If-None-Match — we must populate a
-          // full response. The marker header lets preload trip a loop.
+          // (per-colo) edge cache via its own success-path cache.put. No
+          // If-None-Match (we must populate a full response) and no
+          // cf.cacheEverything — that would let Cloudflare cache the 200
+          // default fallback, which the route deliberately never caches. The
+          // marker header lets preload trip a loop.
           const res = await fetch(
             `${base}/${item.network}/${k}/${encodeURIComponent(item.name)}`,
             {
               headers: { [PRELOAD_MARKER]: "1" },
-              cf: { cacheEverything: true },
               signal: AbortSignal.timeout(SELF_FETCH_TIMEOUT_MS),
             },
           );
           lastStatus = res.status;
           if (!res.ok && res.status !== 304) {
             errors.push(`preload ${k} -> ${res.status}`);
+            ok = false;
+            break;
+          }
+          // The route turns a missing record / pre-stream upstream failure
+          // into a 200 default image. That is NOT a real warm — the intended
+          // image/R2 path didn't run — so report it instead of claiming hot.
+          if (res.headers.get(DEFAULT_IMAGE_HEADER)) {
+            await res.arrayBuffer().catch(() => {}); // release the small body
+            errors.push(
+              `edge: ${k} served default image (record not set or pre-stream upstream failure)`,
+            );
             ok = false;
             break;
           }

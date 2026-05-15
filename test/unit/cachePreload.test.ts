@@ -173,7 +173,42 @@ describe("POST /cache/preload — network+name warms the edge", () => {
       const h = s.init?.headers as Record<string, string>;
       expect(h["x-ens-preload"]).toBe("1");
       expect(s.init?.headers).not.toHaveProperty("If-None-Match");
+      // Must not ask Cloudflare to cache the subrequest — that would cache a
+      // 200 default fallback the route itself never caches.
+      expect((s.init as { cf?: { cacheEverything?: boolean } }).cf?.cacheEverything).toBeUndefined();
     }
+  });
+
+  it("treats a 200 default-image fallback as not warmed", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("/avatar/")) {
+        // The route downgrades a missing record / pre-stream upstream
+        // failure to a 200 default image, tagged with this header.
+        return new Response("<svg/>", {
+          status: 200,
+          headers: {
+            "content-type": "image/svg+xml",
+            "x-ens-default-image": "1",
+          },
+        });
+      }
+      return new Response("ok", { status: 200 });
+    });
+
+    const res = await call(
+      req({ items: [{ network: "mainnet", name: "norecord.eth", kind: "avatar" }] }),
+      makeEnv(),
+    );
+    const body = (await res.json()) as any;
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+
+    const it0 = body.items[0];
+    expect(it0.edge_warmed).toBe(false);
+    expect(it0.error).toMatch(/served default image/);
+    expect(body.warmed).toBe(0);
+    expect(body.failed).toBe(1);
   });
 
   it("uses PUBLIC_BASE_URL when set, else the request origin", async () => {

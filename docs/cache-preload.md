@@ -124,6 +124,12 @@ both is rejected with `400`.
   each prefixed `cid:` or `edge:`.
 - `ok` is `true` even with `failed > 0` — preload is best-effort;
   inspect per-item flags and retry selectively.
+- A name with **no record set**, or whose **upstream image failed before
+  streaming**, makes the public route serve a generic 200 default image.
+  Preload does **not** count that as warmed: `edge_warmed` stays `false`
+  and `error` is `edge: <kind> served default image (…)`. The intended
+  asset wasn't warmed, and preload never caches the placeholder. A bad CID
+  that aborts mid-body likewise yields `edge: <kind> body incomplete`.
 
 ### Error responses
 

@@ -13,7 +13,7 @@ import {
   NameParam,
   NetworkParam,
 } from "../schemas";
-import { CACHE_API_MAX_AGE } from "../constants";
+import { CACHE_API_MAX_AGE, DEFAULT_IMAGE_HEADER } from "../constants";
 import { cacheTagHeader, nameTag } from "../lib/cacheTags";
 import { respondFromCache } from "../lib/responseCache";
 
@@ -32,6 +32,9 @@ function defaultImageResponse(
       "content-type": SVG_MIME,
       "cache-control": `public, max-age=${CACHE_API_MAX_AGE}`,
       "cache-tag": cacheTagHeader(nameTag(network, name)),
+      // Signals this is the placeholder, not the resolved asset, so preload
+      // (and observability) can tell a fallback apart from a real warm.
+      [DEFAULT_IMAGE_HEADER]: "1",
     },
   });
 }

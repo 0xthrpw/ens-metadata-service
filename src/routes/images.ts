@@ -64,6 +64,7 @@ function imageRoute(kind: AvatarKind) {
     path: `/{network}/${kind}/{name}`,
     tags: [kind],
     summary: `Get resolved ${kind} image bytes for an ENS name`,
+    description: `Resolves the ENS \`${kind}\` text record and returns the image bytes. data/IPFS/IPNS/HTTPS/Arweave/eip155 sources are fetched, SVGs sanitized, and the result cached in R2 + at the edge. If the record is unset or the upstream fetch fails before streaming, a default ${kind} placeholder is served.`,
     request: {
       params: z.object({ network: NetworkParam, name: NameParam }),
     },
@@ -84,6 +85,7 @@ function metaRoute(kind: AvatarKind) {
     path: `/{network}/${kind}/{name}/meta`,
     tags: [kind],
     summary: `Get the resolved ${kind} URI without fetching the image`,
+    description: `Returns the resolved ${kind} record URI (and kind) without fetching or caching the image bytes — useful for inspecting what a name's ${kind} points to.`,
     request: {
       params: z.object({ network: NetworkParam, name: NameParam }),
     },

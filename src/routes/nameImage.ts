@@ -33,6 +33,8 @@ const svgRoute = createRoute({
   path: "/{network}/{contract}/{tokenId}/image",
   tags: ["metadata"],
   summary: "Get the rendered ENS name image as SVG",
+  description:
+    "Server-rendered ENS name card as SVG (embedded Satoshi font; emoji and CJK handled). Rendered once and cached in R2 + at the edge.",
   request: { params: PathParams },
   responses: {
     200: {
@@ -49,6 +51,8 @@ const pngRoute = createRoute({
   path: "/{network}/{contract}/{tokenId}/image/png",
   tags: ["metadata"],
   summary: "Get the rendered ENS name image as PNG",
+  description:
+    "Server-rendered ENS name card as PNG — the SVG card rasterized via resvg-wasm (no node-canvas). Rendered once and cached in R2 + at the edge.",
   request: { params: PathParams },
   responses: {
     200: {

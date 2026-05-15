@@ -24,7 +24,7 @@ const openApiConfig = {
     title: "ENS Metadata - Flarecloud",
     version: "0.1.0",
     description:
-      "ENS metadata service on Cloudflare Workers. Serves JSON metadata, avatar, and header records.",
+      "ENS metadata service on Cloudflare Workers. Serves ERC-721/1155 token metadata JSON, resolved avatar/header images, server-rendered ENS name cards (SVG/PNG via resvg-wasm), and an NFT lookup endpoint. Also exposes indexer-only cache invalidation and preload endpoints (bearer-authenticated).",
   },
 } as const;
 

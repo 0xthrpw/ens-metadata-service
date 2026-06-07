@@ -2,28 +2,31 @@
 
 ENS metadata service running on Cloudflare Workers.
 
-A subset of [`ensdomains/ens-metadata-service`](https://github.com/ensdomains/ens-metadata-service) ported to Workers. Serves NFT metadata JSON, avatar/header images, and an NFT lookup endpoint. The image-generation endpoints (`/image`, `/rasterize`) are not included since they need `node-canvas` and Puppeteer.
+A subset of [`ensdomains/ens-metadata-service`](https://github.com/ensdomains/ens-metadata-service) ported to Workers. Serves NFT metadata JSON, resolved avatar/header images, server-rendered ENS name cards (SVG + PNG), and an NFT lookup endpoint. Name cards are rendered with `resvg-wasm` (no `node-canvas`); the upstream Puppeteer-based `/preview` and `/rasterize` endpoints are not included.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ethereumidentitykit/ens-metadata-flarecloud)
 
 ## Compatibility
 
-| Endpoint                                        | Upstream |       Flarecloud        |
-| ----------------------------------------------- | :------: | :---------------------: |
-| `GET /`                                         |    ✓     |     ✓ (Scalar docs)     |
-| `GET /docs`                                     |    ✓     |     ✓ (Scalar docs)     |
-| `GET /favicon.ico`                              |    ✓     |         ✓ (204)         |
-| `GET /{network}/{contract}/{tokenId}`           |    ✓     |            ✓            |
-| `GET /{network}/{contract}/{tokenId}/image`     |    ✓     | ✗ (needs `node-canvas`) |
-| `GET /{network}/{contract}/{tokenId}/rasterize` |    ✓     |   ✗ (needs Puppeteer)   |
-| `GET /{network}/avatar/{name}`                  |    ✓     |            ✓            |
-| `GET /{network}/avatar/{name}/meta`             |    ✓     |            ✓            |
-| `GET /{network}/header/{name}`                  |    ✓     |            ✓            |
-| `GET /{network}/header/{name}/meta`             |    ✓     |            ✓            |
-| `GET /queryNFT`                                 |    ✓     |            ✓            |
-| `GET /preview/{name}`                           |    ✓     |            ✗            |
-| `GET /openapi.json`                             |    ✗     |            ✓            |
-| `GET /llms.txt`                                 |    ✗     |            ✓            |
+| Endpoint                                        | Upstream |          Flarecloud          |
+| ----------------------------------------------- | :------: | :--------------------------: |
+| `GET /`                                         |    ✓     |       ✓ (Scalar docs)        |
+| `GET /docs`                                     |    ✓     |       ✓ (Scalar docs)        |
+| `GET /favicon.ico`                              |    ✓     |          ✓ (204)            |
+| `GET /{network}/{contract}/{tokenId}`           |    ✓     |              ✓               |
+| `GET /{network}/{contract}/{tokenId}/image`     |    ✓     |  ✓ (SVG card via resvg-wasm) |
+| `GET /{network}/{contract}/{tokenId}/image/png` |    ✗     |   ✓ (PNG card via resvg-wasm)|
+| `GET /{network}/{contract}/{tokenId}/rasterize` |    ✓     |     ✗ (needs Puppeteer)      |
+| `GET /{network}/avatar/{name}`                  |    ✓     |              ✓               |
+| `GET /{network}/avatar/{name}/meta`             |    ✓     |              ✓               |
+| `GET /{network}/header/{name}`                  |    ✓     |              ✓               |
+| `GET /{network}/header/{name}/meta`             |    ✓     |              ✓               |
+| `GET /queryNFT`                                 |    ✓     |              ✓               |
+| `GET /preview/{name}`                           |    ✓     |              ✗               |
+| `POST /cache/invalidate`                        |    ✗     |     ✓ (indexer-only)         |
+| `POST /cache/preload`                           |    ✗     |     ✓ (indexer-only)         |
+| `GET /openapi.json`                             |    ✗     |              ✓               |
+| `GET /llms.txt`                                 |    ✗     |              ✓               |
 
 `network` is one of `mainnet`, `sepolia`, `holesky`. `contract` is the BaseRegistrar (v1) or NameWrapper (v2) address.
 
@@ -33,12 +36,10 @@ Click the **Deploy to Cloudflare** button above. Cloudflare forks this repo into
 
 The setup page will prompt for these optional secrets — leave them blank unless you need them:
 
-- `THE_GRAPH_API_KEY` — authenticated Graph queries
-- `OPENSEA_API_KEY` — OpenSea-hosted NFT metadata used by ERC-721 and ERC-1155 avatar/header lookups
-- `RPC_API_KEY` — if your configured RPC URL needs auth
-- `PINATA_GATEWAY_TOKEN` — for Pinata IPFS gateway
+- `THE_GRAPH_API_KEY` — one or more **comma-separated** Graph API keys. Requests are spread randomly across the keys and retried on a different key on rate-limit/transport failures. Blank uses the public subgraph endpoints.
+- `OPENSEA_API_KEY` — OpenSea-hosted NFT metadata used by ERC-721 and ERC-1155 avatar/header lookups.
 
-Public endpoints (`ETH_RPC_URL`, `SUBGRAPH_URL_*`, `IPFS_GATEWAYS`) come from `[vars]` in `wrangler.toml` and can be overridden on the same setup page.
+Public endpoints (`ETH_RPC_URL`, `SUBGRAPH_URL_*`, `IPFS_GATEWAYS`) come from `[vars]` in `wrangler.toml` and can be overridden on the same setup page. The indexer-only endpoints need their own secrets — see [Indexer endpoints](#indexer-endpoints).
 
 ## Local development
 
@@ -61,8 +62,6 @@ If you'd rather clone and deploy from the CLI instead of using the button, log i
 ```sh
 npx wrangler secret put THE_GRAPH_API_KEY      # optional
 npx wrangler secret put OPENSEA_API_KEY        # optional
-npx wrangler secret put RPC_API_KEY            # optional
-npx wrangler secret put PINATA_GATEWAY_TOKEN   # optional
 
 npm run deploy
 ```
@@ -72,18 +71,43 @@ npm run deploy
 Public vars live in `wrangler.toml` under `[vars]` and can be edited freely:
 
 - `ETH_RPC_URL`, `SEPOLIA_RPC_URL`, `HOLESKY_RPC_URL`
-- `IPFS_GATEWAYS` (comma-separated, primary first; defaults to w3s.link, nftstorage.link, ipfs.io)
-- `SUBGRAPH_URL_MAINNET`, `SUBGRAPH_URL_SEPOLIA`, `SUBGRAPH_URL_HOLESKY`
+- `IPFS_GATEWAYS` — comma-separated. All gateways are raced in parallel and the fastest successful response wins. The defaults in `wrangler.toml` are public, best-effort endpoints.
+- `SUBGRAPH_URL_MAINNET`, `SUBGRAPH_URL_SEPOLIA`, `SUBGRAPH_URL_HOLESKY` — `{API_KEY}` in a URL is substituted with a `THE_GRAPH_API_KEY` key.
+- `LOG_LEVEL` — `debug` | `info` | `warn` | `error` (default `info`). See [Observability](#observability).
+- `PUBLIC_BASE_URL` — optional; the absolute origin `/cache/preload` self-fetches to warm the edge cache. Falls back to the incoming request origin when unset (set it behind a custom domain / preview).
 
-Cloudflare retired its public IPFS gateway in 2024. Pinata or a self-hosted Kubo node is recommended for production.
+Cloudflare retired its public IPFS gateway in 2024. For production, point `IPFS_GATEWAYS` at reliable dedicated gateways or a self-hosted Kubo node rather than relying on the public defaults.
+
+## Indexer endpoints
+
+Two indexer-only `POST` endpoints keep caches in sync with on-chain changes. Each returns `503` until its secrets are set; every other route is unaffected.
+
+- **`POST /cache/invalidate`** — purge KV + R2 + the edge cache for a name/token. Secrets: `CACHE_INVALIDATION_TOKEN`, `CF_API_TOKEN`, `CF_ZONE_ID`. Spec: [`docs/cache-invalidation.md`](./docs/cache-invalidation.md).
+- **`POST /cache/preload`** — warm R2 (by CID) and the per-colo edge cache (by `network`+`name`) so the first real user gets a hot response. Secret: `CACHE_PRELOAD_TOKEN` (optional `PUBLIC_BASE_URL`). Spec: [`docs/cache-preload.md`](./docs/cache-preload.md).
+
+```sh
+npx wrangler secret put CACHE_INVALIDATION_TOKEN
+npx wrangler secret put CF_API_TOKEN
+npx wrangler secret put CF_ZONE_ID
+npx wrangler secret put CACHE_PRELOAD_TOKEN
+```
 
 ## Caching
 
 - Resolved avatar/header URIs are cached in KV for 15 minutes
 - Image bytes are cached in R2, keyed by IPFS CID or by `sha256(url)` for HTTPS sources
+- On a cache miss, IPFS/HTTPS images stream to the client while the R2 copy is written in the background, so time-to-first-byte does not wait on the full download
 - HTTPS fetches are revalidated with `If-None-Match` / `If-Modified-Since` when an ETag or `Last-Modified` was stored
 - Responses also opt into the Workers Cache API via `Cache-Control: public, max-age=900`
 - Sanitized SVG bytes are stored in R2 with a `sanitizerVersion` field. When the SVG sanitizer policy changes, bump `SANITIZER_VERSION` in `src/services/sanitize.ts`; older cached entries are lazily re-sanitized on first read. Note: `*.workers.dev` preview URLs cannot be tag-purged — stale Workers Cache responses expire naturally after `max-age=900` (15 min).
+
+## Observability
+
+`[observability]` is enabled in `wrangler.toml`, so `console` output is ingested by Workers Logs. The service emits **structured single-line JSON** logs:
+
+- One `request_complete` line per request (method, path, status, duration) carrying a `reqId` — Cloudflare's `cf-ray` when present, a UUID otherwise — propagated to all service-layer and `waitUntil` logs via `AsyncLocalStorage`.
+- Unhandled errors log `unhandled_error`; handled 5xx log `http_error` (4xx are not logged).
+- Cache-seam and IPFS gateway-race diagnostics (`r2_image_*`, `kv_resolver_*`, `ipfs_gateway_win`) are `debug`-level — set `LOG_LEVEL=debug` under `[vars]` to surface them.
 
 ## License
 

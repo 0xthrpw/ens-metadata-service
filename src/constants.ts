@@ -2,6 +2,11 @@ export const RESOLVER_TTL_SECONDS = 15 * 60;
 export const STALE_RESOLVER_TTL_SECONDS = 2 * 60 * 60;
 export const CACHE_API_MAX_AGE = 15 * 60;
 
+// Marks an avatar/header response as the generic fallback image (record not
+// set, or a pre-stream upstream failure) rather than the real asset. Lets
+// preload tell "served a placeholder" apart from a genuine warm.
+export const DEFAULT_IMAGE_HEADER = "x-ens-default-image";
+
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 export const RPC_TIMEOUT_MS = 5_000;

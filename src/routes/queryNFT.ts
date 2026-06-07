@@ -17,6 +17,8 @@ const route = createRoute({
   path: "/queryNFT",
   tags: ["query"],
   summary: "Look up an ENS name's NFT identifiers",
+  description:
+    "Resolve an ENS name to its NFT identifiers via the subgraph: namehash, owning contract, tokenId, current owner, and registration/expiry dates. `network` defaults to mainnet.",
   request: {
     query: z.object({
       name: z.string().min(1).openapi({ example: "vitalik.eth" }),

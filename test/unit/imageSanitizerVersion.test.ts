@@ -25,6 +25,16 @@ function svgBytes(s: string): ArrayBuffer {
   return encoder.encode(s).buffer as ArrayBuffer;
 }
 
+// fetchImageBytes now streams cold cache-miss responses, so result.body may be
+// a ReadableStream rather than an ArrayBuffer. drain() normalizes both.
+async function drain(result: {
+  body: ReadableStream<Uint8Array> | ArrayBuffer;
+}): Promise<ArrayBuffer> {
+  return result.body instanceof ArrayBuffer
+    ? result.body
+    : await new Response(result.body).arrayBuffer();
+}
+
 beforeEach(() => {
   testEnv.IPFS_GATEWAYS = "https://ipfs-gateway.example";
 });
@@ -52,7 +62,7 @@ describe("sanitizer version cache gating", () => {
       const result = await fetchImageBytes(testEnv, HTTPS_URL, ctx);
       await waitOnExecutionContext(ctx);
 
-      const body = new TextDecoder().decode(result.body as ArrayBuffer);
+      const body = new TextDecoder().decode(await drain(result));
       expect(body).toContain(PNG_B64);
       expect(result.contentType).toBe("image/svg+xml");
 
@@ -129,7 +139,7 @@ describe("sanitizer version cache gating", () => {
       const result = await fetchImageBytes(testEnv, HTTPS_URL + "?stale", ctx);
       await waitOnExecutionContext(ctx);
 
-      const body = new TextDecoder().decode(result.body as ArrayBuffer);
+      const body = new TextDecoder().decode(await drain(result));
       expect(body).toContain(PNG_B64);
 
       const callArgs = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
@@ -166,7 +176,7 @@ describe("sanitizer version cache gating", () => {
       const result = await fetchImageBytes(testEnv, HTTPS_URL + "?legacy", ctx);
       await waitOnExecutionContext(ctx);
 
-      const body = new TextDecoder().decode(result.body as ArrayBuffer);
+      const body = new TextDecoder().decode(await drain(result));
       expect(body).toContain(PNG_B64);
 
       const callArgs = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
@@ -198,7 +208,7 @@ describe("sanitizer version cache gating", () => {
       const result = await fetchImageBytes(testEnv, HTTPS_URL + "?current", ctx);
       await waitOnExecutionContext(ctx);
 
-      const body = new TextDecoder().decode(result.body as ArrayBuffer);
+      const body = new TextDecoder().decode(await drain(result));
       expect(body).toContain(PNG_B64);
       expect(result.etag).toBe(`"current-etag-sv${SANITIZER_VERSION}"`);
     });
@@ -229,7 +239,7 @@ describe("sanitizer version cache gating", () => {
       );
       await waitOnExecutionContext(ctx);
 
-      const body = new TextDecoder().decode(result.body as ArrayBuffer);
+      const body = new TextDecoder().decode(await drain(result));
       expect(body).toContain(PNG_B64);
 
       const cached = await getIpfs(testEnv, IPFS_REF);
@@ -263,7 +273,7 @@ describe("sanitizer version cache gating", () => {
       );
       await waitOnExecutionContext(ctx);
 
-      const body = new TextDecoder().decode(result.body as ArrayBuffer);
+      const body = new TextDecoder().decode(await drain(result));
       expect(body).toContain(PNG_B64);
 
       const cached = await getIpfs(testEnv, legacyRef);
@@ -293,7 +303,7 @@ describe("sanitizer version cache gating", () => {
       await waitOnExecutionContext(ctx);
 
       expect(fetchSpy).not.toHaveBeenCalled();
-      const body = new TextDecoder().decode(result.body as ArrayBuffer);
+      const body = new TextDecoder().decode(await drain(result));
       expect(body).toContain(PNG_B64);
     });
   });
@@ -333,7 +343,7 @@ describe("sanitizer version cache gating", () => {
       const result = await fetchImageBytes(testEnv, HTTPS_URL + "?snapshot", ctx);
       await waitOnExecutionContext(ctx);
 
-      const body = new TextDecoder().decode(result.body as ArrayBuffer);
+      const body = new TextDecoder().decode(await drain(result));
       expect(body).toContain(PNG_DATA_URI);
     });
   });

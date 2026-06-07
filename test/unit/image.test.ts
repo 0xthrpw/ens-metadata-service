@@ -160,7 +160,8 @@ describe("fetchImageBytes", () => {
       timeoutSpy.mock.results[0]?.value,
     );
     expect(image.contentType).toBe("image/png");
-    expect(image.body).toBeInstanceOf(ArrayBuffer);
+    // Known content-type + content-length now streams to the client.
+    expect(image.body).toBeInstanceOf(ReadableStream);
   });
 
   it("wraps HTTPS body-read aborts as upstream errors", async () => {

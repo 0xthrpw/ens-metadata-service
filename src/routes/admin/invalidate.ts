@@ -1,15 +1,16 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { isAddress, labelhash, namehash } from "viem";
-import type { Env } from "../env";
-import { requireBearerToken } from "../lib/auth";
-import { badRequest, HttpError } from "../lib/errors";
-import { nameTag, tokenTag } from "../lib/cacheTags";
-import { getNetwork } from "../lib/networks";
-import { tokenIdToHex } from "../services/domain";
-import { TOKEN_CONTRACTS } from "../constants";
-import { deleteResolved } from "../storage/kvCache";
-import { deleteGeneratedForToken } from "../storage/r2Cache";
-import { ErrorSchema } from "../schemas";
+import type { Env } from "../../env";
+import { badRequest, HttpError } from "../../lib/errors";
+import { log } from "../../lib/log";
+import { runIndexerBatch } from "../../lib/indexerBatch";
+import { nameTag, tokenTag } from "../../lib/cacheTags";
+import { getNetwork } from "../../lib/networks";
+import { tokenIdToHex } from "../../services/domain";
+import { TOKEN_CONTRACTS } from "../../constants";
+import { deleteResolved } from "../../storage/kvCache";
+import { deleteGeneratedForToken } from "../../storage/r2Cache";
+import { ErrorSchema } from "../../schemas";
 
 export const cacheInvalidateRoutes = new OpenAPIHono<{ Bindings: Env }>();
 
@@ -207,25 +208,38 @@ async function purgeTags(
 }
 
 cacheInvalidateRoutes.openapi(route, async (c) => {
-  requireBearerToken(c, c.env.CACHE_INVALIDATION_TOKEN, "CACHE_INVALIDATION_TOKEN");
-  if (!c.env.CF_API_TOKEN) {
-    throw new HttpError(503, "CF_API_TOKEN not configured", "not_configured");
-  }
-  if (!c.env.CF_ZONE_ID) {
-    throw new HttpError(503, "CF_ZONE_ID not configured", "not_configured");
-  }
-
   const { items } = c.req.valid("json");
 
-  const results = await Promise.all(items.map((item) => invalidateItem(c.env, item)));
+  // Bearer auth + required-config (503) + batched processing. concurrency =
+  // items.length preserves the previous Promise.all-equivalent behavior
+  // (the per-item work is cheap KV/R2 deletes, not nested fan-out).
+  const results = await runIndexerBatch(c, {
+    token: c.env.CACHE_INVALIDATION_TOKEN,
+    tokenLabel: "CACHE_INVALIDATION_TOKEN",
+    requiredConfig: [
+      [c.env.CF_API_TOKEN, "CF_API_TOKEN"],
+      [c.env.CF_ZONE_ID, "CF_ZONE_ID"],
+    ],
+    items,
+    concurrency: items.length,
+    handle: (item) => invalidateItem(c.env, item),
+  });
 
   const allTags = new Set<string>();
   for (const r of results) for (const t of r.tags) allTags.add(t);
 
-  const tagsPurged = await purgeTags(c.env.CF_API_TOKEN, c.env.CF_ZONE_ID, [...allTags]);
+  // runIndexerBatch guarantees these are set (requiredConfig 503 otherwise).
+  const tagsPurged = await purgeTags(c.env.CF_API_TOKEN!, c.env.CF_ZONE_ID!, [...allTags]);
 
   const kvTotal = results.reduce((n, r) => n + r.kv_deleted, 0);
   const r2Total = results.reduce((n, r) => n + r.r2_deleted, 0);
+
+  (c.get("log") ?? log).info("cache_invalidate", {
+    items: items.length,
+    tagsPurged,
+    kvDeleted: kvTotal,
+    r2Deleted: r2Total,
+  });
 
   return c.json(
     { ok: true, tags_purged: tagsPurged, kv_deleted: kvTotal, r2_deleted: r2Total, items: results },

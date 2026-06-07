@@ -4,13 +4,16 @@ import { Scalar } from "@scalar/hono-api-reference";
 
 import type { Env } from "./env";
 import { HttpError } from "./lib/errors";
+import {
+  createLogger,
+  log,
+  parseLevel,
+  runWithLogger,
+  setDefaultLevel,
+} from "./lib/log";
 import { createLlmsText } from "./lib/llms";
 import { scalarTheme } from "./lib/scalarTheme";
-import { avatarRoutes, headerRoutes } from "./routes/images";
-import { cacheInvalidateRoutes } from "./routes/cacheInvalidate";
-import { metadataRoutes } from "./routes/metadata";
-import { nameImageRoutes } from "./routes/nameImage";
-import { queryNFTRoutes } from "./routes/queryNFT";
+import { registerRoutes } from "./routes";
 
 const app = new OpenAPIHono<{ Bindings: Env }>();
 const STATIC_CACHE_CONTROL = "public, max-age=3600";
@@ -21,23 +24,45 @@ const openApiConfig = {
     title: "ENS Metadata - Flarecloud",
     version: "0.1.0",
     description:
-      "ENS metadata service on Cloudflare Workers. Serves JSON metadata, avatar, and header records.",
+      "ENS metadata service on Cloudflare Workers. Serves ERC-721/1155 token metadata JSON, resolved avatar/header images, server-rendered ENS name cards (SVG/PNG via resvg-wasm), and an NFT lookup endpoint. Also exposes indexer-only cache invalidation and preload endpoints (bearer-authenticated).",
   },
 } as const;
 
-app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
-  type: "http",
-  scheme: "bearer",
-});
-
 app.use("*", cors());
 
-app.route("/", avatarRoutes);
-app.route("/", headerRoutes);
-app.route("/", queryNFTRoutes);
-app.route("/", nameImageRoutes);
-app.route("/", metadataRoutes);
-app.route("/", cacheInvalidateRoutes);
+// Request correlation + one structured completion line per request. `reqId`
+// is Cloudflare's cf-ray when present (cross-references Workers Logs with the
+// dashboard) and a UUID otherwise (local/test). Level is env-driven per
+// request; the logger is exposed to handlers via c.get("log").
+app.use("*", async (c, next) => {
+  const reqId = c.req.header("cf-ray") ?? crypto.randomUUID();
+  const colo = (c.req.raw.cf as { colo?: string } | undefined)?.colo;
+  const level = parseLevel(c.env.LOG_LEVEL);
+  // Keep the module/default logger (used by the service layer + waitUntil
+  // tasks) in sync with LOG_LEVEL, so debug diagnostics are reachable.
+  setDefaultLevel(level);
+  const reqLog = createLogger({ reqId, ...(colo ? { colo } : {}) }, level);
+  c.set("log", reqLog);
+  // Run the request inside the ALS scope so every `log.*` in the service
+  // layer — and waitUntil tasks created during the request — resolves to
+  // reqLog (reqId/colo) without threading a Logger through signatures.
+  await runWithLogger(reqLog, async () => {
+    const start = Date.now();
+    await next();
+    const network = c.req.param("network");
+    const name = c.req.param("name");
+    reqLog.info("request_complete", {
+      method: c.req.method,
+      path: c.req.path,
+      status: c.res.status,
+      durationMs: Date.now() - start,
+      ...(network ? { network } : {}),
+      ...(name ? { name } : {}),
+    });
+  });
+});
+
+registerRoutes(app);
 
 const openApiDocument = app.getOpenAPI31Document(openApiConfig);
 const llmsText = createLlmsText(openApiDocument);
@@ -75,10 +100,26 @@ app.get("/llms.txt", (c) => {
 });
 
 app.onError((err, c) => {
+  const logger = c.get("log") ?? log;
   if (err instanceof HttpError) {
+    // 5xx HttpErrors are expected upstream failures, not bugs — warn, and skip
+    // 4xx entirely (highest-volume, normal client behavior; would be noise).
+    if (err.status >= 500) {
+      logger.warn("http_error", {
+        method: c.req.method,
+        path: c.req.path,
+        status: err.status,
+        code: err.code,
+        err,
+      });
+    }
     return Response.json({ error: err.code ?? "error", message: err.message }, { status: err.status });
   }
-  console.error(`unhandled error for ${c.req.method} ${c.req.path}:`, err);
+  logger.error("unhandled_error", {
+    method: c.req.method,
+    path: c.req.path,
+    err,
+  });
   return Response.json({ error: "internal_error", message: "internal server error" }, { status: 500 });
 });
 

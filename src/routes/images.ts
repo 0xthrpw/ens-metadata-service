@@ -13,7 +13,7 @@ import {
   NameParam,
   NetworkParam,
 } from "../schemas";
-import { CACHE_API_MAX_AGE } from "../constants";
+import { CACHE_API_MAX_AGE, DEFAULT_IMAGE_HEADER } from "../constants";
 import { cacheTagHeader, nameTag } from "../lib/cacheTags";
 import { respondFromCache } from "../lib/responseCache";
 
@@ -32,6 +32,9 @@ function defaultImageResponse(
       "content-type": SVG_MIME,
       "cache-control": `public, max-age=${CACHE_API_MAX_AGE}`,
       "cache-tag": cacheTagHeader(nameTag(network, name)),
+      // Signals this is the placeholder, not the resolved asset, so preload
+      // (and observability) can tell a fallback apart from a real warm.
+      [DEFAULT_IMAGE_HEADER]: "1",
     },
   });
 }
@@ -61,6 +64,7 @@ function imageRoute(kind: AvatarKind) {
     path: `/{network}/${kind}/{name}`,
     tags: [kind],
     summary: `Get resolved ${kind} image bytes for an ENS name`,
+    description: `Resolves the ENS \`${kind}\` text record and returns the image bytes. data/IPFS/IPNS/HTTPS/Arweave/eip155 sources are fetched, SVGs sanitized, and the result cached in R2 + at the edge. If the record is unset or the upstream fetch fails before streaming, a default ${kind} placeholder is served.`,
     request: {
       params: z.object({ network: NetworkParam, name: NameParam }),
     },
@@ -81,6 +85,7 @@ function metaRoute(kind: AvatarKind) {
     path: `/{network}/${kind}/{name}/meta`,
     tags: [kind],
     summary: `Get the resolved ${kind} URI without fetching the image`,
+    description: `Returns the resolved ${kind} record URI (and kind) without fetching or caching the image bytes — useful for inspecting what a name's ${kind} points to.`,
     request: {
       params: z.object({ network: NetworkParam, name: NameParam }),
     },
@@ -134,8 +139,18 @@ function buildImageRoutes(kind: AvatarKind): OpenAPIHono<{ Bindings: Env }> {
       }
       return res as never;
     } catch (err) {
-      // 404 = record not set; 502 = record set but upstream fetch failed.
-      // Serve the default for both. 415 stays a real error.
+      // Fallback to the default image for failures that surface BEFORE the
+      // response is committed: 404 (record not set) and 502 (record set but
+      // the upstream fetch failed pre-stream — fetch threw, non-2xx, or
+      // content-length > MAX). 415 stays a real error.
+      //
+      // NOTE: in the streaming path (upstream sent both content-type and
+      // content-length) fetchImageBytes returns a 200 stream before the body
+      // is read, so a mid-body upstream abort — or a content-length lie that
+      // trips the size guard — can no longer be caught here: the client gets
+      // a truncated 200, not the default image. This is the accepted
+      // streaming tradeoff (TTFB win); every pre-stream failure still falls
+      // back, and a partial body is never cached.
       if (err instanceof HttpError && (err.status === 404 || err.status === 502)) {
         return defaultImageResponse(kind, network, name) as never;
       }

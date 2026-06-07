@@ -22,6 +22,8 @@ const route = createRoute({
   path: "/{network}/{contract}/{tokenId}",
   tags: ["metadata"],
   summary: "Get ENS NFT metadata JSON",
+  description:
+    "ERC-721/1155 metadata for an ENS name token: normalized name, description, attributes (registration/expiry/length), and the avatar/background image URLs. `contract` is the BaseRegistrar (v1) or NameWrapper (v2) address; `tokenId` may be decimal or 0x-hex.",
   request: {
     params: z.object({
       network: NetworkParam,

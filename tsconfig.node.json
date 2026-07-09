@@ -1,0 +1,12 @@
+{
+  // Typechecks the whole app graph as seen from the Node entrypoint
+  // (src/node/*). Workers globals and Node globals both load here;
+  // skipLibCheck absorbs the overlap between the two ambient type sets.
+  // The root tsconfig excludes src/node so the wrangler-facing typecheck
+  // stays purely on workers-types.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["@cloudflare/workers-types", "node"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

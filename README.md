@@ -66,6 +66,41 @@ npx wrangler secret put OPENSEA_API_KEY        # optional
 npm run deploy
 ```
 
+## Run on Node / Docker
+
+The service also runs as a plain Node server for self-hosting on container
+platforms. The app code is shared unchanged; `src/node/` injects local
+stand-ins for the Workers platform pieces:
+
+| Workers                       | Node                                                 |
+| ----------------------------- | ---------------------------------------------------- |
+| R2 bucket (`IPFS_CACHE`)      | files under `DATA_DIR` (default `/data`)             |
+| KV (`RESOLVER_CACHE`)         | in-memory, same TTLs (cold after restart)            |
+| edge cache (`caches.default`) | in-process LRU, honors `max-age` (128 MB cap)        |
+| `HTMLRewriter`                | [`html-rewriter-wasm`](https://github.com/mrbbot/html-rewriter-wasm) polyfill — same lol-html engine |
+
+```sh
+npm run build:node                          # bundles to dist/server.mjs (esbuild)
+PORT=8080 DATA_DIR=./data npm run start:node
+npm run typecheck:node                      # tsc over the Node view of the codebase
+```
+
+Or containerized: `docker build -t ens-metadata .` then run with a volume on
+`/data` so cached image bytes survive restarts. All configuration arrives as
+plain environment variables with the same names and defaults as the Workers
+deploy (`[vars]` in `wrangler.toml` are mirrored in `src/node/env.ts` — update
+both together).
+
+Self-hosting notes:
+
+- `POST /cache/invalidate` still requires `CF_API_TOKEN` + `CF_ZONE_ID`
+  because it purges the Cloudflare edge cache by tag. Self-hosted without
+  Cloudflare's proxy in front there is no edge cache to purge, but the
+  endpoint (its KV + R2 deletion included) stays 503 until all three secrets
+  are set — same behavior as an unconfigured Workers deploy.
+- The resolver KV and response caches are process-local; a restart serves
+  cold until they re-warm. Image bytes in `DATA_DIR` persist.
+
 ## Configuration
 
 Public vars live in `wrangler.toml` under `[vars]` and can be edited freely:

@@ -1,0 +1,12 @@
+.git
+.github
+.claude
+.wrangler
+.dev.vars
+.dev.vars.example
+node_modules
+dist
+coverage
+docs
+test
+README.md

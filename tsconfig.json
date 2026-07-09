@@ -18,5 +18,8 @@
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "vitest.config.ts"],
+  // The Node runtime adapter typechecks under tsconfig.node.json (needs
+  // @types/node); everything wrangler deploys stays on workers-types only.
+  "exclude": ["src/node"]
 }

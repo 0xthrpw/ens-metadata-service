@@ -32,8 +32,11 @@ const DOMAIN_BY_LABELHASH = gql`
   }
 `
 
+// $id is String! rather than the schema's ID!: subgraph-compatible backends
+// like ENSNode don't define the ID scalar, and both graph-node and ENSNode
+// accept (and coerce) String for the domain(id:) argument.
 const DOMAIN_BY_NAMEHASH = gql`
-	query DomainByNamehash($id: ID!) {
+	query DomainByNamehash($id: String!) {
 		domain(id: $id) {
 			id
 			name
